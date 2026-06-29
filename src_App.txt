@@ -1,0 +1,402 @@
+import React, { useEffect, useRef, useState } from "react";
+import { GameEngine } from "./GameEngine";
+import { GameState, LIFE_IMAGES, COIN_ICON_URL, CURSOR_URL, ENCHANTMENTS, getEnchantmentPrice, DEV_STAT_LIMITS } from "./types";
+
+export default function App() {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [engine, setEngine] = useState<GameEngine | null>(null);
+  const [uiState, setUiState] = useState<GameState>({
+    gameStarted: false,
+    isPaused: false,
+    isDead: false,
+    devUnlocked: false,
+    showDevPassword: false,
+    lives: 3,
+    maxLives: 3,
+    coins: 0,
+    worldMusicVolume: 30,
+    shopMusicVolume: 30,
+    sfxVolume: 50,
+    deathMessage: "",
+    scoreMessage: "",
+    hitFlash: false,
+    showDeathScreen: false,
+    shopFade: 0,
+    inShop: false,
+    shopOverlayVisible: false,
+    enchantmentLevels: {},
+    missionProgress: { visible: false, text: "", progress: 0, target: 0 },
+    missionPopup: { title: "", desc: "", visible: false },
+    shopMissions: [],
+    devValues: {
+      acceleration: 0.6,
+      friction: 0.9,
+      bulletSpeed: 8,
+      bulletSize: 20,
+      fireRate: 6,
+      bulletPierce: 0,
+      multishot: 0,
+      fireshot: 0,
+      shield: 0,
+      maxLives: 3,
+      lives: 3,
+      coins: 0,
+    },
+  });
+
+  const [devPasswordInput, setDevPasswordInput] = useState("");
+  const [devPasswordError, setDevPasswordError] = useState(false);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    // Instantiate high-performance game engine
+    const gameInstance = new GameEngine(containerRef.current, (state) => {
+      setUiState(state);
+    });
+
+    setEngine(gameInstance);
+
+    return () => {
+      gameInstance.destroy();
+    };
+  }, []);
+
+  // Determine life display height
+  let lifeHeight = "h-10";
+  if (uiState.maxLives === 4) lifeHeight = "h-9";
+  if (uiState.maxLives === 5) lifeHeight = "h-8";
+  if (uiState.maxLives >= 6) lifeHeight = "h-7";
+
+  const currentLifeKey = `${uiState.lives}/${uiState.maxLives}`;
+  const lifeImageSrc = LIFE_IMAGES[currentLifeKey] || LIFE_IMAGES["0/3"];
+
+  const handleStartGame = () => {
+    if (engine) engine.startGame();
+  };
+
+  const handlePauseToggle = () => {
+    if (engine) engine.togglePause();
+  };
+
+  const handleRestart = () => {
+    if (engine) engine.restart();
+  };
+
+  const handleDevSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!engine) return;
+    const isCorrect = engine.checkDevPassword(devPasswordInput);
+    if (!isCorrect) {
+      setDevPasswordError(true);
+      setTimeout(() => setDevPasswordError(false), 1500);
+    }
+    setDevPasswordInput("");
+  };
+
+  const handleDevCancel = () => {
+    if (engine) engine.cancelDevPassword();
+  };
+
+  const handleDevValueChange = (key: string, val: number) => {
+    if (engine) engine.setDevValue(key, val);
+  };
+
+  return (
+    <div className="relative w-screen h-screen overflow-hidden select-none bg-white font-press-start">
+      {/* Game Canvas Container */}
+      <div
+        id="game-container"
+        ref={containerRef}
+        className="absolute inset-0 z-0 overflow-hidden"
+        style={{
+          cursor: `url("${CURSOR_URL}") 16 16, auto`,
+        }}
+      />
+
+      {/* Hit Flash overlay */}
+      {uiState.hitFlash && (
+        <div className="fixed inset-0 bg-red-600/30 pointer-events-none z-10 transition-opacity duration-75" />
+      )}
+
+      {/* Black Fade Overlay for Shop transitions */}
+      <div
+        className="fixed inset-0 bg-black pointer-events-none z-50 transition-opacity duration-300"
+        style={{
+          opacity: uiState.shopFade,
+        }}
+      />
+
+      {/* HUD - Top Left Lives & Coins */}
+      {uiState.gameStarted && (
+        <div className="fixed top-5 left-5 z-20 flex flex-col gap-3 pointer-events-none">
+          {/* Heart Health bar */}
+          <img
+            src={lifeImageSrc}
+            alt="Lives Indicator"
+            className={`${lifeHeight} w-auto object-contain drop-shadow-[2px_2px_0px_#000]`}
+          />
+
+          {/* Coin balance panel */}
+          <div className="flex items-center gap-2 drop-shadow-[2px_2px_0px_#000]">
+            <img src={COIN_ICON_URL} alt="Coins" className="h-16 w-auto object-contain" />
+            <span className="text-2xl text-yellow-400">x{uiState.coins}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Pause Button - Top Right */}
+      {uiState.gameStarted && !uiState.isDead && (
+        <button
+          onClick={handlePauseToggle}
+          className="fixed top-5 right-5 z-20 px-6 py-3 bg-neutral-900/85 border-2 border-white text-white hover:bg-neutral-800 active:translate-y-0.5 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] text-xs cursor-pointer"
+        >
+          {uiState.isPaused ? "RESUME" : "PAUSE"}
+        </button>
+      )}
+
+      {/* Mission Progress HUD Indicator (Top Right, below pause button) */}
+      {uiState.gameStarted && uiState.missionProgress.visible && (
+        <div className="fixed top-20 right-5 z-20 p-3 bg-green-600/95 border-2 border-green-900 rounded-none shadow-[3px_3px_0px_#000] max-w-xs text-xs font-bold text-white leading-normal pointer-events-none animate-bounce">
+          {uiState.missionProgress.progress}/{uiState.missionProgress.target}
+        </div>
+      )}
+
+      {/* Pop-up message overlays (Middle-top) */}
+      {uiState.missionPopup.visible && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 max-w-lg bg-neutral-900/95 border-4 border-yellow-400 p-5 rounded-none shadow-[4px_4px_0px_#000] pointer-events-none">
+          <p className="text-yellow-400 text-sm font-bold text-center">{uiState.missionPopup.title}</p>
+          <p className="text-white text-xs text-center leading-relaxed">{uiState.missionPopup.desc}</p>
+        </div>
+      )}
+
+      {/* STARTUP MENU */}
+      {!uiState.gameStarted && (
+        <div className="fixed inset-0 bg-radial from-neutral-100 to-neutral-300 z-40 flex flex-col items-center justify-center gap-10">
+          <h1 className="text-yellow-400 text-3xl md:text-5xl lg:text-6xl text-center select-none tracking-wider drop-shadow-[5px_5px_0px_#000] leading-snug">
+            THE GRINDULATOR
+          </h1>
+          <button
+            onClick={handleStartGame}
+            className="px-12 py-6 bg-white border-4 border-neutral-900 text-neutral-900 text-xl md:text-2xl hover:bg-neutral-100 active:translate-y-1 shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] transition-all cursor-pointer"
+          >
+            START GAME
+          </button>
+          <p className="absolute right-5 bottom-5 text-neutral-800 text-[10px]">
+            Made by Alexander Newton
+          </p>
+        </div>
+      )}
+
+      {/* PAUSE MENU OVERLAY */}
+      {uiState.isPaused && !uiState.showDevPassword && (
+        <div className="fixed inset-0 bg-black/60 z-30 flex items-center justify-center">
+          <div className="w-[460px] max-w-[90vw] bg-neutral-900/95 border-4 border-white shadow-[8px_8px_0px_#000] p-5 flex flex-col items-center gap-3.5 max-h-[85vh] overflow-y-auto">
+            <h2 className="text-white text-xl text-center tracking-wide mb-1 drop-shadow-[2px_2px_0px_#000]">
+              YOU ARE PAUSED
+            </h2>
+
+            {/* World Music volume control */}
+            <div className="w-full flex flex-col gap-1 items-center">
+              <span className="text-[9px] text-white">WORLD MUSIC: {uiState.worldMusicVolume}%</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={uiState.worldMusicVolume}
+                onChange={(e) => {
+                  if (engine) engine.setWorldMusicVolume(parseInt(e.target.value));
+                }}
+                className="w-4/5 h-2.5 bg-neutral-800 border-2 border-white rounded-none accent-yellow-400 cursor-pointer"
+              />
+            </div>
+
+            {/* Shop Music volume control */}
+            <div className="w-full flex flex-col gap-1 items-center">
+              <span className="text-[9px] text-white">SHOP MUSIC: {uiState.shopMusicVolume}%</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={uiState.shopMusicVolume}
+                onChange={(e) => {
+                  if (engine) engine.setShopMusicVolume(parseInt(e.target.value));
+                }}
+                className="w-4/5 h-2.5 bg-neutral-800 border-2 border-white rounded-none accent-yellow-400 cursor-pointer"
+              />
+            </div>
+
+            {/* Sound FX volume control */}
+            <div className="w-full flex flex-col gap-1 items-center">
+              <span className="text-[9px] text-white">SOUND EFFECTS: {uiState.sfxVolume}%</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={uiState.sfxVolume}
+                onChange={(e) => {
+                  if (engine) engine.setSfxVolume(parseInt(e.target.value));
+                }}
+                className="w-4/5 h-2.5 bg-neutral-800 border-2 border-white rounded-none accent-yellow-400 cursor-pointer"
+              />
+            </div>
+
+            {/* Current Active Mission status */}
+            <div className="w-full flex flex-col gap-1 items-center border-t border-neutral-700 pt-3">
+              <span className="text-[9px] text-neutral-400">CURRENT MISSION</span>
+              <div className="max-h-20 overflow-y-auto w-full text-center">
+                {uiState.shopMissions.length === 0 ? (
+                  <p className="text-[8px] text-yellow-400">NONE ACTIVE</p>
+                ) : (
+                  uiState.shopMissions.map((sm, idx) => (
+                    <p
+                      key={idx}
+                      className={`text-[8px] leading-relaxed mb-0.5 ${
+                        sm.done ? "text-green-400" : "text-yellow-400"
+                      }`}
+                    >
+                      {sm.done ? "[DONE] " : ""}
+                      {sm.desc} ({sm.progress}/{sm.target})
+                    </p>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* DEV TESTS unlocking gate */}
+            <button
+              onClick={() => {
+                if (engine) engine.openDevPassword();
+              }}
+              disabled={uiState.devUnlocked}
+              className={`px-3 py-1.5 border-2 border-white text-white hover:bg-neutral-800 text-[10px] shadow-[2px_2px_0px_#000] cursor-pointer mt-1 ${
+                uiState.devUnlocked ? "opacity-40 cursor-not-allowed" : ""
+              }`}
+            >
+              DEV TESTS
+            </button>
+
+            {/* Expanded Real-time Developer controls panel once unlocked */}
+            {uiState.devUnlocked && (
+              <div className="w-full flex flex-col gap-4 border-t-2 border-dashed border-white pt-5 mt-2 overflow-y-visible">
+                <button
+                  onClick={() => {
+                    if (engine) engine.skipMission();
+                  }}
+                  className="w-4/5 self-center py-3 border-2 border-yellow-400 text-yellow-400 hover:bg-yellow-400/20 text-[10px] shadow-[3px_3px_0px_#000] cursor-pointer"
+                >
+                  SKIP MISSION
+                </button>
+
+                {/* Developer Tweak Sliders */}
+                <div className="flex flex-col gap-4">
+                  {[
+                    { label: "ACCEL", key: "acceleration", format: (v: number) => v.toFixed(1) },
+                    { label: "FRICTION", key: "friction", format: (v: number) => v.toFixed(2) },
+                    { label: "BULLET SPEED", key: "bulletSpeed", format: (v: number) => v.toFixed(1) },
+                    { label: "BULLET SIZE", key: "bulletSize", format: (v: number) => Math.round(v) },
+                    { label: "FIRE RATE", key: "fireRate", format: (v: number) => v.toFixed(1) },
+                    { label: "BULLET PIERCE", key: "bulletPierce", format: (v: number) => Math.round(v) },
+                    { label: "MULTISHOT", key: "multishot", format: (v: number) => Math.round(v) },
+                    { label: "FIRESHOT", key: "fireshot", format: (v: number) => Math.round(v) },
+                    { label: "SHIELD", key: "shield", format: (v: number) => Math.round(v) },
+                    { label: "MAX LIVES", key: "maxLives", format: (v: number) => Math.round(v) },
+                    {
+                      label: "LIVES",
+                      key: "lives",
+                      min: 0,
+                      max: uiState.devValues.maxLives,
+                      step: 1,
+                      format: (v: number) => Math.round(v),
+                    },
+                    { label: "COINS", key: "coins", format: (v: number) => Math.round(v) },
+                  ].map((s) => {
+                    const devVal = (uiState.devValues as any)[s.key];
+                    return (
+                      <div key={s.key} className="flex flex-col gap-1 items-center">
+                        <span className="text-[9px] text-white text-center">
+                          {s.label}: {s.format(devVal)}
+                        </span>
+                        <input
+                          type="range"
+                          min={s.min !== undefined ? s.min : (DEV_STAT_LIMITS as any)[s.key]?.min}
+                          max={s.max !== undefined ? s.max : (DEV_STAT_LIMITS as any)[s.key]?.max}
+                          step={s.step !== undefined ? s.step : (DEV_STAT_LIMITS as any)[s.key]?.step}
+                          value={devVal}
+                          onChange={(e) => handleDevValueChange(s.key, parseFloat(e.target.value))}
+                          className="w-4/5 h-2 bg-neutral-800 border border-white rounded-none accent-yellow-400 cursor-pointer"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* RESUME BUTTON */}
+            <button
+              onClick={handlePauseToggle}
+              className="w-3/5 py-2 bg-neutral-800 border-2 border-white text-white hover:bg-neutral-700 active:translate-y-0.5 text-[11px] shadow-[2px_2px_0px_#000] cursor-pointer mt-1"
+            >
+              RESUME
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* DEV PASSWORD ENTRY SCREEN */}
+      {uiState.showDevPassword && (
+        <div className="fixed inset-0 bg-black/75 z-40 flex items-center justify-center">
+          <div className="w-[380px] bg-neutral-900 border-4 border-yellow-400 shadow-[6px_6px_0px_#000] p-6 flex flex-col items-center gap-4 text-center">
+            <p className="text-white text-xs">ENTER ACCESS CODE:</p>
+            <form onSubmit={handleDevSubmit} className="w-full flex flex-col items-center gap-4">
+              <input
+                type="password"
+                placeholder="******"
+                value={devPasswordInput}
+                onChange={(e) => setDevPasswordInput(e.target.value)}
+                style={{
+                  borderColor: devPasswordError ? "red" : "#fff",
+                }}
+                className="w-4/5 p-2 font-press-start text-xs text-center border-2 bg-black text-yellow-400 outline-none transition-colors duration-150"
+              />
+              <div className="flex gap-3 w-4/5">
+                <button
+                  type="button"
+                  onClick={handleDevCancel}
+                  className="flex-1 py-2 border-2 border-white bg-neutral-800 text-white text-[10px] cursor-pointer"
+                >
+                  CANCEL
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 border-2 border-yellow-400 bg-neutral-800 text-yellow-400 text-[10px] cursor-pointer"
+                >
+                  ENTER
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* GAME OVER / DEATH SCREEN */}
+      {uiState.showDeathScreen && (
+        <div className="fixed inset-0 bg-black/90 z-45 flex flex-col items-center justify-center gap-6">
+          <p className="text-white text-xl md:text-2xl text-center leading-relaxed drop-shadow-[2px_2px_0px_#000]">
+            {uiState.deathMessage}
+          </p>
+          <p className="text-yellow-400 text-lg md:text-xl text-center tracking-widest drop-shadow-[2px_2px_0px_#000]">
+            {uiState.scoreMessage}
+          </p>
+          <button
+            onClick={handleRestart}
+            className="px-10 py-5 border-4 border-white bg-neutral-800 text-white text-xl hover:bg-neutral-700 active:translate-y-1 shadow-[5px_5px_0px_0px_rgba(255,255,255,1)] hover:shadow-[3px_3px_0px_0px_rgba(255,255,255,1)] transition-all cursor-pointer"
+          >
+            RESTART
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

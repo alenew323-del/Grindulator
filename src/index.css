@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-press-start: "Press Start 2P", monospace;
+}
+
+@keyframes pop-up-entry {
+  0% { transform: translate(-50%, -120%) scale(0.6); opacity: 0; }
+  60% { transform: translate(-50%, 15px) scale(1.05); opacity: 1; }
+  100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+}
+
+@keyframes pop-up-entry-center {
+  0% { transform: translate(-50%, -50%) scale(0.6); opacity: 0; }
+  60% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+.animate-popup-entry {
+  animation: pop-up-entry 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards;
+}
+
+.animate-popup-entry-center {
+  animation: pop-up-entry-center 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.2) forwards;
+}

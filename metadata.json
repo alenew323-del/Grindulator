@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Remix: The Grindulator",
+  "description": "An immersive 8-bit retro action survival game with enchantments, progressive missions, and deep player upgrades.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
