@@ -171,6 +171,7 @@ export interface GameState {
   worldMusicVolume: number;
   shopMusicVolume: number;
   sfxVolume: number;
+  maxParticles: number;
   deathMessage: string;
   scoreMessage: string;
   hitFlash: boolean;
@@ -383,6 +384,7 @@ export const DEFAULTS = {
   SHIELD: 0,
   LIVES: 3,
   MAX_LIVES: 3,
+  MAX_PARTICLES: 35,
 };
 
 export const DEV_STAT_LIMITS = {

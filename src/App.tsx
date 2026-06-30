@@ -18,6 +18,7 @@ export default function App() {
     worldMusicVolume: 30,
     shopMusicVolume: 30,
     sfxVolume: 50,
+    maxParticles: 35,
     deathMessage: "",
     scoreMessage: "",
     hitFlash: false,
@@ -323,6 +324,22 @@ export default function App() {
                 value={uiState.sfxVolume}
                 onChange={(e) => {
                   if (engine) engine.setSfxVolume(parseInt(e.target.value));
+                }}
+                className="w-4/5 h-2.5 bg-neutral-800 border-2 border-white rounded-none accent-yellow-400 cursor-pointer"
+              />
+            </div>
+
+            {/* Particles amount control */}
+            <div className="w-full flex flex-col gap-1 items-center">
+              <span className="text-[9px] text-white">MAX PARTICLES: {uiState.maxParticles === 0 ? "OFF" : uiState.maxParticles}</span>
+              <input
+                type="range"
+                min="0"
+                max="80"
+                step="5"
+                value={uiState.maxParticles}
+                onChange={(e) => {
+                  if (engine) engine.setMaxParticles(parseInt(e.target.value));
                 }}
                 className="w-4/5 h-2.5 bg-neutral-800 border-2 border-white rounded-none accent-yellow-400 cursor-pointer"
               />

@@ -159,6 +159,7 @@ export class GameEngine {
     worldMusicVolume: number;
     shopMusicVolume: number;
     sfxVolume: number;
+    maxParticles: number;
     screenScale: number;
     gameStarted: boolean;
     isDead: boolean;
@@ -205,7 +206,7 @@ export class GameEngine {
       shopMissionTier: 1, usedMissionIds: { 1: [], 2: [], 3: [], 4: [] },
       enchantmentLevels: {}, shopOverlayVisible: false, shopMusic: null,
       lastSpawnTime: 0, nextSpawnInterval: 2500,
-      currentMusic: null, worldMusicVolume: 0.3, shopMusicVolume: 0.3, sfxVolume: 0.5,
+      currentMusic: null, worldMusicVolume: 0.3, shopMusicVolume: 0.3, sfxVolume: 0.5, maxParticles: DEFAULTS.MAX_PARTICLES,
       screenScale: 1,
       gameStarted: false, isDead: false, isPaused: false,
       devUnlocked: false, showDevPassword: false,
@@ -275,7 +276,7 @@ export class GameEngine {
       gameStarted: s.gameStarted, isPaused: s.isPaused, isDead: s.isDead,
       devUnlocked: s.devUnlocked, showDevPassword: s.showDevPassword,
       lives: s.lives, maxLives: s.maxLives, coins: s.coins,
-      worldMusicVolume: Math.round(s.worldMusicVolume * 100), shopMusicVolume: Math.round(s.shopMusicVolume * 100), sfxVolume: Math.round(s.sfxVolume * 100),
+      worldMusicVolume: Math.round(s.worldMusicVolume * 100), shopMusicVolume: Math.round(s.shopMusicVolume * 100), sfxVolume: Math.round(s.sfxVolume * 100), maxParticles: s.maxParticles,
       deathMessage: s.deathMessage, scoreMessage: s.scoreMessage,
       hitFlash: s.hitFlash, showDeathScreen: s.showDeathScreen, shopFade: s.shopFade,
       inShop: s.inShop, shopOverlayVisible: s.shopOverlayVisible,
@@ -348,6 +349,7 @@ export class GameEngine {
   public setShopMusicVolume(v: number) { this.state.shopMusicVolume = v / 100; if (this.state.shopMusic) this.state.shopMusic.volume = this.state.shopMusicVolume; this.resumeMusic(); this.emitState(); }
   public setMusicVolume(v: number) { this.setWorldMusicVolume(v); }
   public setSfxVolume(v: number) { this.state.sfxVolume = v / 100; this.emitState(); }
+  public setMaxParticles(v: number) { this.state.maxParticles = v; this.emitState(); }
 
   public updatePlayerSprite() {
     const s = this.state;
@@ -369,13 +371,17 @@ export class GameEngine {
     } else {
       if (s.fireshot > 0) {
         this.playerEl.src = PLAYER_ANIMS[s.playerAnimFrame % PLAYER_ANIMS.length];
+        this.playerEl.style.width = '72px';
+        this.playerEl.style.height = '72px';
+        s.centerOffsetX = 36;
+        s.centerOffsetY = 36;
       } else {
         this.playerEl.src = PLAYER_SPRITES[0];
+        this.playerEl.style.width = '72px';
+        this.playerEl.style.height = '42px';
+        s.centerOffsetX = 36;
+        s.centerOffsetY = 21;
       }
-      this.playerEl.style.width = '72px';
-      this.playerEl.style.height = '42px';
-      s.centerOffsetX = 36;
-      s.centerOffsetY = 21;
     }
   }
 
@@ -475,11 +481,14 @@ export class GameEngine {
   }
 
   public triggerFireshotSplit(enemyX: number, enemyY: number, enemySize: number) {
-    const s = this.state; if (s.fireshot <= 0) return; this.triggerMissionEvent('fireshot_split', s.fireshot);
+    const s = this.state; if (s.fireshot <= 0) return;
+    if (s.bullets.length >= 60) return;
+    this.triggerMissionEvent('fireshot_split', s.fireshot);
     const px = s.x + s.centerOffsetX, py = s.y + s.centerOffsetY;
     const baseAwayAngle = Math.atan2(enemyY - py, enemyX - px);
     const fireBulletSize = Math.max(s.bulletSize * 1.5, 32);
-    for (let i = 0; i < s.fireshot; i++) {
+    const splitCount = Math.min(s.fireshot, 3);
+    for (let i = 0; i < splitCount; i++) {
       const randomAngleOffset = (Math.random() * Math.PI) - (Math.PI / 2); const splitAngle = baseAwayAngle + randomAngleOffset;
       const spawnKickbackRadius = (enemySize / 2) + (fireBulletSize / 2) + 5;
       const spawnX = enemyX + Math.cos(splitAngle) * spawnKickbackRadius, spawnY = enemyY + Math.sin(splitAngle) * spawnKickbackRadius;
@@ -820,6 +829,7 @@ export class GameEngine {
 
   public spawnPlayerParticle() {
     const s = this.state;
+    if (s.particles.length >= s.maxParticles) return;
     const size = 5 + Math.random() * 8;
     const el = document.createElement('img');
     el.src = "https://codehs.com/uploads/28fa6fa755aabb395f685d97bd917e86";
@@ -827,9 +837,10 @@ export class GameEngine {
     const py = s.y + s.centerOffsetY;
     const x = px + (Math.random() - 0.5) * 16 - (s.vx * 1.5);
     const y = py + (Math.random() - 0.5) * 16 - (s.vy * 1.5);
-    el.style.cssText = `width:${size}px;height:${size}px;position:absolute;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:300;opacity:0.95;`;
-    el.style.left = (x - size / 2 - s.cameraX) + 'px';
-    el.style.top = (y - size / 2 - s.cameraY) + 'px';
+    el.style.cssText = `width:${size}px;height:${size}px;position:absolute;left:0;top:0;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:300;opacity:0.95;`;
+    const tx = x - size / 2 - s.cameraX;
+    const ty = y - size / 2 - s.cameraY;
+    el.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
     this.container.appendChild(el);
     s.particles.push({ x, y, size, el, startTime: Date.now(), duration: 500, isFireshot: false });
   }
@@ -837,12 +848,14 @@ export class GameEngine {
   public spawnBulletParticle(bx: number, by: number) {
     const s = this.state;
     if (s.shield > 0 && s.fireshot > 0) return;
+    if (s.particles.length >= s.maxParticles) return;
     const size = 12 + Math.random() * 12;
     const el = document.createElement('img');
     el.src = "https://codehs.com/uploads/28fa6fa755aabb395f685d97bd917e86";
-    el.style.cssText = `width:${size}px;height:${size}px;position:absolute;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:300;opacity:0.9;filter:brightness(0.35) saturate(1.8);`;
-    el.style.left = (bx - size / 2 - s.cameraX) + 'px';
-    el.style.top = (by - size / 2 - s.cameraY) + 'px';
+    el.style.cssText = `width:${size}px;height:${size}px;position:absolute;left:0;top:0;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:300;opacity:0.9;filter:brightness(0.35) saturate(1.8);`;
+    const tx = bx - size / 2 - s.cameraX;
+    const ty = by - size / 2 - s.cameraY;
+    el.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
     this.container.appendChild(el);
     s.particles.push({ x: bx, y: by, size, el, startTime: Date.now(), duration: 500, isFireshot: true });
   }
@@ -861,11 +874,10 @@ export class GameEngine {
       const ratio = elapsed / p.duration;
       const opacity = Math.max(0, 0.95 * (1 - ratio));
       p.el.style.opacity = opacity.toString();
-      const currentSize = p.size * (1 - ratio * 0.3);
-      p.el.style.width = currentSize + 'px';
-      p.el.style.height = currentSize + 'px';
-      p.el.style.left = (p.x - currentSize / 2 - s.cameraX) + 'px';
-      p.el.style.top = (p.y - currentSize / 2 - s.cameraY) + 'px';
+      const scale = 1 - ratio * 0.3;
+      const tx = p.x - p.size / 2 - s.cameraX;
+      const ty = p.y - p.size / 2 - s.cameraY;
+      p.el.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`;
     }
   }
 
@@ -1482,7 +1494,7 @@ export class GameEngine {
     if (s.keys['d'] || s.keys['ArrowRight']) s.vx += s.acceleration;
     s.vx *= s.friction; s.vy *= s.friction; s.x += s.vx; s.y += s.vy;
     if (Math.hypot(s.vx, s.vy) > 0.3 && !s.inShop) {
-      if (Math.random() < 0.35) {
+      if (Math.random() < 0.1) {
         this.spawnPlayerParticle();
       }
     }
@@ -1571,7 +1583,7 @@ export class GameEngine {
     for (const b of s.bullets) {
       b.x += b.vx;
       b.y += b.vy;
-      if (s.fireshot > 0 && Math.random() < 0.35) {
+      if (s.fireshot > 0 && Math.random() < 0.06) {
         this.spawnBulletParticle(b.x, b.y);
       }
     }
@@ -1582,13 +1594,17 @@ export class GameEngine {
 
     // 2. Resolve bullet-bullet collisions with accurate physics (mass proportional to size squared)
     const resolveBulletBounce = (b1: any, b2: any, size1: number, size2: number, isB1PiercingPlayer: boolean = false, isB2PiercingPlayer: boolean = false) => {
-      const dx = b1.x - b2.x;
-      const dy = b1.y - b2.y;
-      const distSq = dx * dx + dy * dy;
-      const dist = Math.sqrt(distSq);
       const minDist = (size1 + size2) / 2;
+      const dx = b1.x - b2.x;
+      if (Math.abs(dx) >= minDist) return;
+      const dy = b1.y - b2.y;
+      if (Math.abs(dy) >= minDist) return;
 
-      if (dist < minDist && dist > 0.01) {
+      const distSq = dx * dx + dy * dy;
+      const minDistSq = minDist * minDist;
+
+      if (distSq < minDistSq && distSq > 0.0001) {
+        const dist = Math.sqrt(distSq);
         // Resolve overlap
         const overlap = minDist - dist;
         const pushX = (dx / dist) * overlap;
