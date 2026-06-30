@@ -146,7 +146,17 @@ export interface Explosion {
   size: number;
   el: HTMLImageElement;
   frame: number;
-  timer: number;
+  startTime: number;
+}
+
+export interface GameParticle {
+  x: number;
+  y: number;
+  size: number;
+  el: HTMLImageElement;
+  startTime: number;
+  duration: number;
+  isFireshot: boolean;
 }
 
 export interface GameState {
@@ -249,6 +259,27 @@ export const PLAYER_ANIMS = [
   "https://codehs.com/uploads/b0c42540c26642f5d592dad5e01b7399",
   "https://codehs.com/uploads/fc02f0afbf65fe0ccec3627d0a77be86",
 ];
+
+export const PLAYER_MULTISHOT_FIRE_ANIMS: Record<number, string[]> = {
+  1: [
+    "https://codehs.com/uploads/e6325b7f561f0e665ad2ecbe2fbd6c24",
+    "https://codehs.com/uploads/236e63a9e9b306563076ed37cb41303c",
+    "https://codehs.com/uploads/fc42fb1c7bd0bffb1205c79bb728733f",
+    "https://codehs.com/uploads/bd760aadb97593f36d1d1a414c3a8f21"
+  ],
+  2: [
+    "https://codehs.com/uploads/56f55eec1802194ce06e937aacc7ac7e",
+    "https://codehs.com/uploads/82721ef48636fa30a6f1dc15388ae426",
+    "https://codehs.com/uploads/724c5adf0db19fcf56857d07a52b22f0",
+    "https://codehs.com/uploads/a0e254b2d50a8f886a21b90b2e60dd4a"
+  ],
+  3: [
+    "https://codehs.com/uploads/126fa88e8fff21da3757b079f5e12909",
+    "https://codehs.com/uploads/cf6b1c97487830fc0d352fa14e1a2f25",
+    "https://codehs.com/uploads/1cff32e6594ba7aef5694ceb7124e3e9",
+    "https://codehs.com/uploads/bf8a20b23c588141b799dfdaed41b0ab"
+  ]
+};
 
 export const BULLET_ANIMS = [
   "https://codehs.com/uploads/d784e2846d1ee036a203c8015ba7e32d",
@@ -380,7 +411,7 @@ export const SHOP_FADE_DURATION = 650;
 export const SHOP_SCREEN_WIDEN_FACTOR = 1.05;
 export const SHOP_ARROW_BEEP_INTERVAL = 900;
 export const BOMBER_TRIGGER_RADIUS = 300; // Fixed! Now blows up when <= 300px
-export const BOMBER_EXPLOSION_RADIUS = 330;
+export const BOMBER_EXPLOSION_RADIUS = 450;
 export const BOMBER_EXPLOSION_FRAME_TIME = 60;
 
 export const SHOP_ITEM_WIDTH = 195;
@@ -394,16 +425,17 @@ export const ENEMY_TYPES: EnemyType[] = [
   { name: "Basic Mob", speed: 2.5, health: 1, sprite: "https://codehs.com/uploads/c1f80496c09b22885b7c5363c5a39f61", unlock: 0, size: 70, weight: 50, weightGrowth: 4, fireRate: 0, coins: 1 },
   { name: "Fast Mob", speed: 5, health: 1, sprite: "https://codehs.com/uploads/f90e57af5395807dbe4331e547933f97", unlock: 20000, size: 45, weight: 6, weightGrowth: 15, fireRate: 0, coins: 2 },
   { name: "Big Mob", speed: 1.8, health: 3, sprite: "https://codehs.com/uploads/fb3ecf8b15c243670ee79c2f5fc4a1ee", unlock: 20000, size: 80, weight: 15, weightGrowth: 15, fireRate: 0, coins: 3 },
-  // FIXED Bomber Mob: Decreased spawn rate (weight decreased to 3, weightGrowth to 5)
-  { name: "Bomber Mob", speed: 3, health: 5, sprite: BOMBER_SPRITES[0], unlock: 30000, size: 55, weight: 3, weightGrowth: 5, fireRate: 0, coins: 15, isBomber: true },
+  // Bomber Mob: Increased spawn rate and weight growth, and introduced earlier at 25s
+  { name: "Bomber Mob", speed: 3, health: 5, sprite: BOMBER_SPRITES[0], unlock: 25000, size: 55, weight: 15, weightGrowth: 12, fireRate: 0, coins: 15, isBomber: true },
   { name: "Beefy Mob", speed: 1.5, health: 50, sprite: "https://codehs.com/uploads/552b9a6928e6fc4ec63afdb3f001ad65", unlock: 55000, size: 100, weight: 1, weightGrowth: 8, fireRate: 0, coins: 50 },
   // FIXED Shooter Mob: Reduced spawn rate (weight decreased from 2.5 to 1.2, weightGrowth from 9 to 4)
   { name: "Shooter Mob", speed: 3, health: 10, sprite: "https://codehs.com/uploads/874cb3f4442820a144faf789633c16a9", bullet: SHOOTER_BULLET_SPRITE, unlock: 65000, size: 70, weight: 1.2, weightGrowth: 4, fireRate: 10, coins: 20, isShooter: true, shooterPattern: "parallel" },
   // FIXED Magic Mob: Health set to 7 lives
   { name: "Magic Mob", speed: 2.2, health: 7, sprite: "https://codehs.com/uploads/819a6f4f283715719dd1712ef1854afd", unlock: 75000, size: 70, weight: 2, weightGrowth: 10, fireRate: 2, isShooter: true, coins: 15 },
-  // FIXED Armored Mob: Substantially increased spawn rate and weight growth!
-  { name: "Armored Mob", speed: 2.5, health: 20, sprite: "https://codehs.com/uploads/4e3c28353f88ff04be4d4d828e7b2c3d", bullet: ARMORED_BULLET_SPRITE, unlock: 85000, size: 70, weight: 4.0, weightGrowth: 12, fireRate: 2.5, coins: 20, isShooter: true, canHaveShield: true, canHaveMultishot: true, shooterPattern: "spread" },
-  { name: "Mimic Mob", speed: "player", health: "player", sprite: "player", bullet: "player", unlock: 95000, size: "player", weight: 0.75, weightGrowth: 6, fireRate: "player", coins: 25, isShooter: true, isMimic: true, shooterPattern: "mimic" },
+  // FIXED Armored Mob: Substantially reduced spawn rate to avoid lag! Reduced fireRate to 1.25.
+  { name: "Armored Mob", speed: 2.5, health: 20, sprite: "https://codehs.com/uploads/4e3c28353f88ff04be4d4d828e7b2c3d", bullet: ARMORED_BULLET_SPRITE, unlock: 85000, size: 70, weight: 1.2, weightGrowth: 4, fireRate: 1.25, coins: 20, isShooter: true, canHaveShield: true, canHaveMultishot: true, shooterPattern: "spread" },
+  // Mimic Mob: Delayed unlock to 100s, weight decreased to 0.15 and weightGrowth decreased to 1 so it spawns much less frequently!
+  { name: "Mimic Mob", speed: "player", health: "player", sprite: "player", bullet: "player", unlock: 100000, size: "player", weight: 0.15, weightGrowth: 1, fireRate: "player", coins: 25, isShooter: true, isMimic: true, shooterPattern: "mimic" },
 ];
 
 export const MISSION_DATABASE = [

@@ -211,12 +211,12 @@ export default function App() {
             className="fixed top-[72px] right-5 z-20 p-2 bg-green-600/95 border-2 border-green-900 rounded-none shadow-[2px_2px_0px_#000] pointer-events-none text-center flex items-center justify-center min-w-[70px]"
           >
             <motion.span
-              key={uiState.missionProgress.progress}
+              key={Math.floor(uiState.missionProgress.progress)}
               animate={{ scale: [1, 1.3, 1] }}
               transition={{ duration: 0.25, ease: "easeOut" }}
               className="text-[10px] font-bold text-white whitespace-nowrap font-press-start tracking-tight"
             >
-              {Math.min(uiState.missionProgress.target, Math.round(uiState.missionProgress.progress))}/{uiState.missionProgress.target}
+              {Math.min(uiState.missionProgress.target, Math.floor(uiState.missionProgress.progress))}/{uiState.missionProgress.target}
             </motion.span>
           </motion.div>
         )}
@@ -343,7 +343,7 @@ export default function App() {
                       }`}
                     >
                       {sm.done ? "[DONE] " : ""}
-                      {sm.desc} ({Math.min(sm.target, Math.round(sm.progress))}/{sm.target})
+                      {sm.desc} ({sm.done ? sm.target : Math.min(sm.target - 1, Math.floor(sm.progress))}/{sm.target})
                     </p>
                   ))
                 )}

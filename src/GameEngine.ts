@@ -5,6 +5,8 @@ import {
   ShieldBullet,
   EnemyBullet,
   Explosion,
+  GameParticle,
+  PLAYER_MULTISHOT_FIRE_ANIMS,
   GameState,
   SOUNDS,
   SHOP_SOUNDS,
@@ -69,6 +71,8 @@ export class GameEngine {
 
   // Cache door frame images
   private _doorFrameCache: HTMLImageElement[];
+  private _explosionFrameCache: HTMLImageElement[];
+  private _multishotFireFrameCache: HTMLImageElement[];
 
   public state: {
     x: number;
@@ -83,6 +87,7 @@ export class GameEngine {
     enemies: Enemy[];
     shieldBullets: ShieldBullet[];
     explosions: Explosion[];
+    particles: GameParticle[];
     acceleration: number;
     friction: number;
     bulletSpeed: number;
@@ -115,6 +120,7 @@ export class GameEngine {
     enteringShop: boolean;
     shopVisits: number;
     shopItemEls: { el: HTMLDivElement; enchantId: string; x: number; y: number }[];
+    shopTitleEl: HTMLDivElement | null;
     shopEntranceActive: boolean;
     shopEntranceEl: HTMLImageElement | null;
     shopExitEl: HTMLImageElement | null;
@@ -124,6 +130,7 @@ export class GameEngine {
     missionProgress: { visible: boolean; text: string; progress: number; target: number };
     shopArrowEl: HTMLImageElement | null;
     shopArrowTextEl: HTMLDivElement | null;
+    shopArrowFade: number;
     shopArrowAnimFrame: number;
     shopArrowAnimTimer: number;
     entranceDoorAnimFrame: number;
@@ -173,7 +180,7 @@ export class GameEngine {
 
     this.state = {
       x: 900, y: 400, vx: 0, vy: 0, mouseX: 0, mouseY: 0, keys: {},
-      bullets: [], enemyBullets: [], enemies: [], shieldBullets: [], explosions: [],
+      bullets: [], enemyBullets: [], enemies: [], shieldBullets: [], explosions: [], particles: [],
       acceleration: DEFAULTS.ACCELERATION, friction: DEFAULTS.FRICTION,
       bulletSpeed: DEFAULTS.BULLET_SPEED, bulletSize: DEFAULTS.BULLET_SIZE,
       fireRate: DEFAULTS.FIRE_RATE, fireDelay: 1000 / DEFAULTS.FIRE_RATE,
@@ -186,10 +193,10 @@ export class GameEngine {
       activePlaytime: 0, lastTimestamp: Date.now(), lastFrameTime: performance.now(),
       gameSessionId: 0,
       activeMissions: [], completedMissions: [],
-      inShop: false, enteringShop: false, shopVisits: 0, shopItemEls: [],
+      inShop: false, enteringShop: false, shopVisits: 0, shopItemEls: [], shopTitleEl: null,
       shopEntranceActive: false, shopEntranceEl: null, shopExitEl: null, shopEnterTime: 0, shopFade: 0, lastShopArrowBeepTime: 0,
       missionProgress: { visible: false, text: '', progress: 0, target: 0 },
-      shopArrowEl: null, shopArrowTextEl: null, shopArrowAnimFrame: 0, shopArrowAnimTimer: 0,
+      shopArrowEl: null, shopArrowTextEl: null, shopArrowFade: 0, shopArrowAnimFrame: 0, shopArrowAnimTimer: 0,
       entranceDoorAnimFrame: 0, entranceDoorAnimPlayed: false, entranceDoorAnimTimer: 0,
       exitDoorAnimFrame: 0, exitDoorAnimPlayed: false, exitDoorAnimTimer: 0,
       postShopSpawnDelay: false,
@@ -216,6 +223,15 @@ export class GameEngine {
     this.container.appendChild(this.playerEl);
 
     this._doorFrameCache = DOOR_ANIM_FRAMES.map(url => { const img = new Image(); img.src = url; return img; });
+    this._explosionFrameCache = BOMBER_EXPLOSION_FRAMES.map(url => { const img = new Image(); img.src = url; return img; });
+    this._multishotFireFrameCache = [];
+    Object.values(PLAYER_MULTISHOT_FIRE_ANIMS).forEach(frames => {
+      frames.forEach(url => {
+        const img = new Image();
+        img.src = url;
+        this._multishotFireFrameCache.push(img);
+      });
+    });
 
     this.testBoxEl = document.createElement('div');
     this.testBoxEl.style.cssText = 'width:50px;height:50px;background:gold;position:absolute;visibility:hidden;pointer-events:none;';
@@ -335,7 +351,15 @@ export class GameEngine {
 
   public updatePlayerSprite() {
     const s = this.state;
-    if (s.multishot > 0) {
+    if (s.multishot > 0 && s.fireshot > 0) {
+      const level = Math.min(s.multishot, 3);
+      const frames = PLAYER_MULTISHOT_FIRE_ANIMS[level] || PLAYER_MULTISHOT_FIRE_ANIMS[1];
+      this.playerEl.src = frames[s.playerAnimFrame % frames.length];
+      this.playerEl.style.width = '72px';
+      this.playerEl.style.height = '72px';
+      s.centerOffsetX = 36;
+      s.centerOffsetY = 36;
+    } else if (s.multishot > 0) {
       let idx = Math.min(s.multishot, 3);
       this.playerEl.src = PLAYER_SPRITES[idx];
       this.playerEl.style.width = '72px';
@@ -344,7 +368,7 @@ export class GameEngine {
       s.centerOffsetY = 36;
     } else {
       if (s.fireshot > 0) {
-        this.playerEl.src = PLAYER_ANIMS[s.playerAnimFrame];
+        this.playerEl.src = PLAYER_ANIMS[s.playerAnimFrame % PLAYER_ANIMS.length];
       } else {
         this.playerEl.src = PLAYER_SPRITES[0];
       }
@@ -478,11 +502,10 @@ export class GameEngine {
       if (e.name === 'Shooter Mob' && elapsedSec > 90) growthFactor *= 1.5;
       if (e.name === 'Armored Mob') {
         const timeSinceUnlock = (elapsedMs - e.unlock) / 1000;
-        const progress = Math.min(1, Math.max(0, timeSinceUnlock / 180));
-        const rampScale = 0.1 + progress * 2.4; // Starts small (10%) and scales up to 250% over 3 minutes!
+        const progress = Math.min(1, Math.max(0, timeSinceUnlock / 240)); // Gentler ramp over 4 mins
+        const rampScale = 0.05 + progress * 0.75; // Starts at 5%, ramps up to 80% maximum
         growthFactor *= rampScale;
       }
-      if (e.name === 'Armored Mob' && elapsedSec > 200) growthFactor *= 1.3;
       if (e.name === 'Mimic Mob' && elapsedSec > 130) growthFactor *= 1.25;
       const finalWeight = e.weight * growthFactor; totalWeight += finalWeight; return { ...e, finalWeight };
     });
@@ -513,7 +536,13 @@ export class GameEngine {
   }
 
   public doSpawn() {
-    const s = this.state; const side = Math.floor(Math.random() * 4); let ex = 0, ey = 0;
+    const s = this.state;
+    const totalEnemies = s.enemies.length;
+    const onScreenEnemies = s.enemies.filter(e => !e.isUnloaded).length;
+    if (totalEnemies >= 55 || onScreenEnemies >= 35) {
+      return; // Skip spawning to limit loaded mobs and prevent lag
+    }
+    const side = Math.floor(Math.random() * 4); let ex = 0, ey = 0;
     const spawnWidth = this.getSpawnScreenWidth(), spawnHeight = this.getSpawnScreenHeight();
     const camLeft = s.x - spawnWidth / 2, camRight = s.x + spawnWidth / 2;
     const camTop = s.y - spawnHeight / 2, camBottom = s.y + spawnHeight / 2;
@@ -532,7 +561,7 @@ export class GameEngine {
       lastShot: 0,
       nextShotAt: Date.now() + this.getEnemyInitialShotDelay(type),
       hasSplit: false, isClone: false, originalId: null,
-      id: Math.random().toString(36).substr(2, 9), isUnloaded: false,
+      id: Math.random().toString(36).substr(2, 9), isUnloaded: true,
       shieldBullets: [], activeShieldSignature: '', animTimer: 0, animFrame: 0
     };
     if (type.name === 'Magic Mob') {
@@ -540,8 +569,13 @@ export class GameEngine {
     }
     if (type.canHaveShield) enemy.shieldLevel = Math.random() < 0.75 ? 1 + Math.floor(Math.random() * 4) : 0;
     if (type.canHaveMultishot) enemy.multishotLevel = Math.random() < 0.5 ? 1 : 0;
-    enemy.el = this.createEnemyElement(enemy);
-    this.syncEnemyShieldSystem(enemy);
+    
+    // Only create DOM elements if spawned on screen
+    if (this.isOnScreen(x, y, 200)) {
+      enemy.isUnloaded = false;
+      enemy.el = this.createEnemyElement(enemy);
+      this.syncEnemyShieldSystem(enemy);
+    }
     return enemy;
   }
 
@@ -559,7 +593,13 @@ export class GameEngine {
   public getMimicSprite() { const s = this.state; if (s.multishot > 0) return PLAYER_SPRITES[Math.min(Math.floor(s.multishot), 3)]; return s.fireshot > 0 ? PLAYER_ANIMS[s.playerAnimFrame] : PLAYER_SPRITES[0]; }
   public getEnemySprite(enemy: Enemy) { if (enemy.type.isBomber) return BOMBER_SPRITES[enemy.animFrame || 0]; if (enemy.type.isMimic) return this.getMimicSprite(); return enemy.type.sprite; }
   public getEnemySpeed(enemy: Enemy) { return enemy.type.speed === 'player' ? Math.max(2, this.state.acceleration * 5) : enemy.type.speed; }
-  public getEnemyFireRate(enemy: Enemy) { return enemy.type.fireRate === 'player' ? this.state.fireRate : enemy.type.fireRate; }
+  public getEnemyFireRate(enemy: Enemy) {
+    if (enemy.type.isMimic) {
+      const baseRate = enemy.type.fireRate === 'player' ? this.state.fireRate : enemy.type.fireRate;
+      return baseRate * 0.45;
+    }
+    return enemy.type.fireRate === 'player' ? this.state.fireRate : enemy.type.fireRate;
+  }
   public getEnemyBulletSpeed(enemy: Enemy) { if (enemy.type.isMimic) return this.state.bulletSpeed; if (enemy.type.shooterPattern === 'parallel') return 6; if (enemy.type.shooterPattern === 'spread') return 4.8; return 4; }
   public getEnemyBulletSize(enemy: Enemy) { if (enemy.type.isMimic) return this.state.fireshot > 0 ? Math.max(this.state.bulletSize * 1.5, 32) : this.state.bulletSize; if (enemy.type.shooterPattern === 'parallel') return 18; return 20; }
   public getEnemyBulletSprite(enemy: Enemy) { if (enemy.type.isMimic) return this.state.fireshot > 0 ? BULLET_ANIMS[0] : DEFAULT_BULLET_SPRITE; return enemy.type.bullet || MAGIC_BULLET_SPRITE; }
@@ -575,7 +615,7 @@ export class GameEngine {
     const fireshot = this.getEnemyFireshot(enemy);
     const baseSize = fireshot > 0 ? Math.max(this.state.bulletSize * 1.5, 32) : this.getEnemyBulletSize(enemy);
     const signature = `${level}:${fireshot}:${Math.round(baseSize)}`;
-    if (level <= 0) { this.clearEnemyShieldElements(enemy); return; }
+    if (level <= 0 || enemy.isUnloaded) { this.clearEnemyShieldElements(enemy); return; }
     if (enemy.activeShieldSignature === signature && enemy.shieldBullets && enemy.shieldBullets.length > 0) return;
     this.clearEnemyShieldElements(enemy);
     let count, hits; if (level <= 5) { count = 3 + level; hits = 2 + level; } else { count = 4 + level; hits = 4 + level; }
@@ -636,8 +676,8 @@ export class GameEngine {
     const speed = options.speed || this.getEnemyBulletSpeed(enemy);
     const sprite = options.sprite || this.getEnemyBulletSprite(enemy);
     const el = document.createElement('img'); el.src = sprite;
-    // Lower z-layer: 550, which is below enemy elements (z-index: 600)
-    el.style.cssText = `width:${size}px;position:absolute;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:550;`;
+    // Lower z-layer: 400, which is below enemy elements (z-index: 600)
+    el.style.cssText = `width:${size}px;position:absolute;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:400;`;
     el.style.left = (x - (size / 2) - this.state.cameraX) + 'px'; el.style.top = (y - (size / 2) - this.state.cameraY) + 'px'; el.style.transform = `rotate(${angle}rad)`;
     this.container.appendChild(el);
     
@@ -664,7 +704,7 @@ export class GameEngine {
     const totalBullets = 1 + (multishot * 2);
     const angleStep = Math.PI / 12; // 15 degrees, completely equal angles apart for all levels of multishot
     const startAngle = baseAng - ((totalBullets - 1) * angleStep) / 2;
-    const muzzleDistance = Math.max(18, eSize * 0.45);
+    const muzzleDistance = Math.max(10, eSize * 0.25);
     
     // Apply a single random offset to the whole spray so they stay symmetrical
     const spreadOffset = (Math.random() * 0.08 - 0.04);
@@ -684,7 +724,7 @@ export class GameEngine {
     const cy = enemy.y + eSize / 2;
 
     const perp = baseAng + Math.PI / 2;
-    const muzzleDistance = Math.max(22, eSize * 0.45);
+    const muzzleDistance = Math.max(12, eSize * 0.25);
     // Rows closer together (reduced offset from 13 to 10 for a tighter, cleaner symmetric alignment)
     const rowOffset = 10; 
     
@@ -740,19 +780,92 @@ export class GameEngine {
 
   public startExplosion(x: number, y: number) {
     const size = BOMBER_EXPLOSION_RADIUS * 2;
-    const el = document.createElement('img'); el.src = BOMBER_EXPLOSION_FRAMES[0];
-    el.style.cssText = `width:${size}px;position:absolute;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:10002;`;
+    const el = document.createElement('img');
+    el.referrerPolicy = "no-referrer";
+    if (this._explosionFrameCache && this._explosionFrameCache[0]) {
+      el.src = this._explosionFrameCache[0].src;
+    } else {
+      el.src = BOMBER_EXPLOSION_FRAMES[0];
+    }
+    el.style.cssText = `width:${size}px;height:${size}px;position:absolute;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:10002;`;
     el.style.left = (x - size / 2 - this.state.cameraX) + 'px'; el.style.top = (y - size / 2 - this.state.cameraY) + 'px';
     this.container.appendChild(el);
-    this.state.explosions.push({ x, y, size, el, frame: 0, timer: 0 });
+    this.state.explosions.push({ x, y, size, el, frame: 0, startTime: Date.now() });
   }
 
-  public updateExplosions(dt: number) {
+  public updateExplosions() {
     const s = this.state;
+    const now = Date.now();
     for (let i = s.explosions.length - 1; i >= 0; i--) {
-      const ex = s.explosions[i]; ex.timer += dt;
-      if (ex.timer >= BOMBER_EXPLOSION_FRAME_TIME) { ex.timer = 0; ex.frame++; if (ex.frame >= BOMBER_EXPLOSION_FRAMES.length) { ex.el.remove(); s.explosions.splice(i, 1); continue; } ex.el.src = BOMBER_EXPLOSION_FRAMES[ex.frame]; }
-      ex.el.style.left = (ex.x - ex.size / 2 - s.cameraX) + 'px'; ex.el.style.top = (ex.y - ex.size / 2 - s.cameraY) + 'px';
+      const ex = s.explosions[i];
+      const elapsed = now - ex.startTime;
+      const frame = Math.floor(elapsed / BOMBER_EXPLOSION_FRAME_TIME);
+      if (frame >= BOMBER_EXPLOSION_FRAMES.length) {
+        ex.el.remove();
+        s.explosions.splice(i, 1);
+        continue;
+      }
+      if (ex.frame !== frame) {
+        ex.frame = frame;
+        if (this._explosionFrameCache && this._explosionFrameCache[frame]) {
+          ex.el.src = this._explosionFrameCache[frame].src;
+        } else {
+          ex.el.src = BOMBER_EXPLOSION_FRAMES[frame];
+        }
+      }
+      ex.el.style.left = (ex.x - ex.size / 2 - s.cameraX) + 'px';
+      ex.el.style.top = (ex.y - ex.size / 2 - s.cameraY) + 'px';
+    }
+  }
+
+  public spawnPlayerParticle() {
+    const s = this.state;
+    const size = 5 + Math.random() * 8;
+    const el = document.createElement('img');
+    el.src = "https://codehs.com/uploads/28fa6fa755aabb395f685d97bd917e86";
+    const px = s.x + s.centerOffsetX;
+    const py = s.y + s.centerOffsetY;
+    const x = px + (Math.random() - 0.5) * 16 - (s.vx * 1.5);
+    const y = py + (Math.random() - 0.5) * 16 - (s.vy * 1.5);
+    el.style.cssText = `width:${size}px;height:${size}px;position:absolute;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:300;opacity:0.95;`;
+    el.style.left = (x - size / 2 - s.cameraX) + 'px';
+    el.style.top = (y - size / 2 - s.cameraY) + 'px';
+    this.container.appendChild(el);
+    s.particles.push({ x, y, size, el, startTime: Date.now(), duration: 500, isFireshot: false });
+  }
+
+  public spawnBulletParticle(bx: number, by: number) {
+    const s = this.state;
+    if (s.shield > 0 && s.fireshot > 0) return;
+    const size = 12 + Math.random() * 12;
+    const el = document.createElement('img');
+    el.src = "https://codehs.com/uploads/28fa6fa755aabb395f685d97bd917e86";
+    el.style.cssText = `width:${size}px;height:${size}px;position:absolute;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:300;opacity:0.9;filter:brightness(0.35) saturate(1.8);`;
+    el.style.left = (bx - size / 2 - s.cameraX) + 'px';
+    el.style.top = (by - size / 2 - s.cameraY) + 'px';
+    this.container.appendChild(el);
+    s.particles.push({ x: bx, y: by, size, el, startTime: Date.now(), duration: 500, isFireshot: true });
+  }
+
+  public updateParticles() {
+    const s = this.state;
+    const now = Date.now();
+    for (let i = s.particles.length - 1; i >= 0; i--) {
+      const p = s.particles[i];
+      const elapsed = now - p.startTime;
+      if (elapsed >= p.duration) {
+        p.el.remove();
+        s.particles.splice(i, 1);
+        continue;
+      }
+      const ratio = elapsed / p.duration;
+      const opacity = Math.max(0, 0.95 * (1 - ratio));
+      p.el.style.opacity = opacity.toString();
+      const currentSize = p.size * (1 - ratio * 0.3);
+      p.el.style.width = currentSize + 'px';
+      p.el.style.height = currentSize + 'px';
+      p.el.style.left = (p.x - currentSize / 2 - s.cameraX) + 'px';
+      p.el.style.top = (p.y - currentSize / 2 - s.cameraY) + 'px';
     }
   }
 
@@ -798,6 +911,26 @@ export class GameEngine {
         this._killEnemy(victim, vIdx, 'explosion');
       }
     });
+
+    // Destroy all player bullets in blast radius
+    for (let i = s.bullets.length - 1; i >= 0; i--) {
+      const b = s.bullets[i];
+      const dist = Math.hypot(b.x - ex, b.y - ey);
+      if (dist <= BOMBER_EXPLOSION_RADIUS * 0.85) {
+        if (b.el) b.el.remove();
+        s.bullets.splice(i, 1);
+      }
+    }
+
+    // Destroy all enemy bullets in blast radius
+    for (let i = s.enemyBullets.length - 1; i >= 0; i--) {
+      const eb = s.enemyBullets[i];
+      const dist = Math.hypot(eb.x - ex, eb.y - ey);
+      if (dist <= BOMBER_EXPLOSION_RADIUS * 0.85) {
+        if (eb.el) eb.el.remove();
+        s.enemyBullets.splice(i, 1);
+      }
+    }
   }
 
   public spawnMagicClones(originalEnemy: Enemy) {
@@ -858,13 +991,15 @@ export class GameEngine {
   }
 
   public triggerMissionEvent(eventType: string, amount?: number, eventData?: any) {
-    const s = this.state; const amt = (amount || 1) * 1.6; const data = eventData || {};
+    const s = this.state;
+    if (s.shopEntranceActive || s.inShop || s.enteringShop) return;
+    const amt = amount || 1; const data = eventData || {};
     const currentShopMission = this.getCurrentShopMission();
     const missionsToUpdate = currentShopMission ? [currentShopMission] : s.activeMissions;
     missionsToUpdate.forEach(mission => {
       if (mission.type !== eventType) return; let match = true;
       if (mission.type === 'kill_mob' && mission.targetId !== data.mobType) match = false;
-      if (mission.type === 'bullet_multikill') { if (data.killCount * 1.6 >= mission.target) { mission.progress = mission.target; } else { match = false; } }
+      if (mission.type === 'bullet_multikill') { if (data.killCount >= mission.target) { mission.progress = mission.target; } else { match = false; } }
       if (match && mission.type !== 'bullet_multikill') { mission.progress += amt; }
       if (mission.progress >= mission.target && !s.completedMissions.includes(mission.id)) { s.completedMissions.push(mission.id); if (SHOP_SOUNDS.TASK_COMPLETE) this.playSound(SHOP_SOUNDS.TASK_COMPLETE); }
     });
@@ -876,7 +1011,7 @@ export class GameEngine {
     const s = this.state; const mission = this.getCurrentShopMission();
     const ratio = mission ? mission.progress / mission.target : 0;
     const newState = mission && ratio >= 0.8 && ratio < 1 ? { visible: true, text: mission.desc, progress: mission.progress, target: mission.target } : { visible: false, text: '', progress: 0, target: 0 };
-    const changed = s.missionProgress.visible !== newState.visible || s.missionProgress.progress !== newState.progress || s.missionProgress.target !== newState.target;
+    const changed = s.missionProgress.visible !== newState.visible || Math.floor(s.missionProgress.progress) !== Math.floor(newState.progress) || s.missionProgress.target !== newState.target;
     s.missionProgress = newState; if (changed) this.emitState();
   }
 
@@ -941,10 +1076,10 @@ export class GameEngine {
     el.style.cssText = `width:${SHOP_SPRITE_SIZE}px;position:absolute;z-index:500;pointer-events:none;user-select:none;-webkit-user-drag:none;`;
     el.style.left = (s.shopEntranceX - s.cameraX) + 'px'; el.style.top = (s.shopEntranceY - s.cameraY) + 'px'; this.container.appendChild(el);
     s.shopEntranceEl = el; s.entranceDoorAnimFrame = 0; s.entranceDoorAnimPlayed = false; s.entranceDoorAnimTimer = 0;
-    const arrowEl = document.createElement('img'); arrowEl.src = ARROW_FRAMES[0];
-    arrowEl.style.cssText = `width:40px;position:fixed;z-index:100004;pointer-events:none;user-select:none;-webkit-user-drag:none;transform-origin:center;opacity:0;transition:opacity 0.45s ease;`; this.container.appendChild(arrowEl); s.shopArrowEl = arrowEl;
+    const arrowEl = document.createElement('img'); arrowEl.src = "https://codehs.com/uploads/47d2aecdb1c143d3e23af2901a76dd7f";
+    arrowEl.style.cssText = `width:40px;position:fixed;z-index:100004;pointer-events:none;user-select:none;-webkit-user-drag:none;transform-origin:center;opacity:0;`; this.container.appendChild(arrowEl); s.shopArrowEl = arrowEl;
     const textEl = document.createElement('div'); textEl.textContent = 'SHOP HAS OPENED';
-    textEl.style.cssText = `position:fixed;z-index:100004;pointer-events:none;font-family:'Press Start 2P',monospace;font-size:14px;color:#ffcc00;text-shadow:2px 2px 0 #000;white-space:nowrap;opacity:0;transition:opacity 0.45s ease;`; this.container.appendChild(textEl); s.shopArrowTextEl = textEl;
+    textEl.style.cssText = `position:fixed;z-index:100004;pointer-events:none;font-family:'Press Start 2P',monospace;font-size:14px;color:#ffcc00;text-shadow:2px 2px 0 #000;white-space:nowrap;opacity:0;`; this.container.appendChild(textEl); s.shopArrowTextEl = textEl;
     s.shopArrowAnimFrame = 0; s.shopArrowAnimTimer = 0; s.lastShopArrowBeepTime = 0; this.emitState();
   }
 
@@ -952,6 +1087,7 @@ export class GameEngine {
     const s = this.state;
     s.shopItemEls.forEach(item => { if (item.el) item.el.remove(); });
     s.shopItemEls = [];
+    if (s.shopTitleEl) { s.shopTitleEl.remove(); s.shopTitleEl = null; }
   }
 
   public createPhysicalShopItems() {
@@ -967,6 +1103,18 @@ export class GameEngine {
     const totalHeight = (rows * scaledHeight) + ((rows - 1) * scaledRowGap);
     const startX = SHOP_AREA_X - (totalWidth / 2);
     const startY = SHOP_AREA_Y - (totalHeight / 2) - (35 * s.screenScale);
+
+    // Create yellow 'THE SHOP' big text
+    const titleEl = document.createElement('div');
+    titleEl.textContent = 'THE SHOP';
+    const titleFontSize = 40 * s.screenScale;
+    titleEl.style.cssText = `position:absolute;font-family:'Press Start 2P',monospace;font-size:${titleFontSize}px;color:#ffcc00;text-shadow:${4 * s.screenScale}px ${4 * s.screenScale}px 0 #000;white-space:nowrap;z-index:10000;pointer-events:none;transform:translate(-50%, -50%);`;
+    const titleX = SHOP_AREA_X;
+    const titleY = startY - 80 * s.screenScale;
+    titleEl.style.left = (titleX - s.cameraX) + 'px';
+    titleEl.style.top = (titleY - s.cameraY) + 'px';
+    this.container.appendChild(titleEl);
+    s.shopTitleEl = titleEl;
 
     ENCHANTMENTS.forEach((enchant, index) => {
       const col = index % SHOP_ITEM_COLUMNS, row = Math.floor(index / SHOP_ITEM_COLUMNS);
@@ -1084,10 +1232,22 @@ export class GameEngine {
   public positionPhysicalShopItems() {
     const s = this.state;
     s.shopItemEls.forEach(item => { item.el.style.left = (item.x - s.cameraX) + 'px'; item.el.style.top = (item.y - s.cameraY) + 'px'; });
+    if (s.shopTitleEl) {
+      const rows = Math.ceil(ENCHANTMENTS.length / SHOP_ITEM_COLUMNS);
+      const scaledHeight = SHOP_ITEM_HEIGHT * s.screenScale;
+      const scaledRowGap = SHOP_ITEM_ROW_GAP * s.screenScale;
+      const totalHeight = (rows * scaledHeight) + ((rows - 1) * scaledRowGap);
+      const startY = SHOP_AREA_Y - (totalHeight / 2) - (35 * s.screenScale);
+      const titleY = startY - 80 * s.screenScale;
+      s.shopTitleEl.style.left = (SHOP_AREA_X - s.cameraX) + 'px';
+      s.shopTitleEl.style.top = (titleY - s.cameraY) + 'px';
+    }
   }
 
   public enterShop() {
     const s = this.state; if (s.inShop || s.enteringShop) return; s.enteringShop = true; s.shopEntranceActive = false;
+    s.shopUnlockMissions = [];
+    s.activeMissions = s.activeMissions.filter(m => !m.isShopUnlock);
     this.stopSound(SHOP_SOUNDS.SHOP_ARROW_BEEP);
     this.stopSound(SHOP_SOUNDS.TASK_COMPLETE);
     this.stopSound(SHOP_SOUNDS.SHOP_ENTER);
@@ -1096,6 +1256,7 @@ export class GameEngine {
     if (s.shopEntranceEl) { s.shopEntranceEl.remove(); s.shopEntranceEl = null; }
     if (s.shopArrowEl) { s.shopArrowEl.remove(); s.shopArrowEl = null; }
     if (s.shopArrowTextEl) { s.shopArrowTextEl.remove(); s.shopArrowTextEl = null; }
+    s.shopArrowFade = 0;
     s.shopFade = 1; this.emitState();
     const sessionId = s.gameSessionId;
     setTimeout(() => {
@@ -1166,14 +1327,15 @@ export class GameEngine {
 
   public cleanUpOldGameSession() {
     const s = this.state;
-    s.enemies.forEach(e => { this.clearEnemyShieldElements(e); if (e.el) e.el.remove(); }); s.bullets.forEach(b => b.el.remove()); s.enemyBullets.forEach(eb => eb.el.remove()); s.explosions.forEach(ex => ex.el.remove()); this.clearShieldElements();
-    s.enemies = []; s.bullets = []; s.enemyBullets = []; s.explosions = []; s.gameSessionId++;
+    s.enemies.forEach(e => { this.clearEnemyShieldElements(e); if (e.el) e.el.remove(); }); s.bullets.forEach(b => b.el.remove()); s.enemyBullets.forEach(eb => eb.el.remove()); s.explosions.forEach(ex => ex.el.remove()); s.particles.forEach(p => p.el.remove()); this.clearShieldElements();
+    s.enemies = []; s.bullets = []; s.enemyBullets = []; s.explosions = []; s.particles = []; s.gameSessionId++;
     s.inShop = false; s.enteringShop = false; s.shopEntranceActive = false; s.shopVisits = 0; s.screenScale = 1; s.lastShopArrowBeepTime = 0; this.applyScreenScale(); this.clearPhysicalShopItems();
     s.shopUnlockMissions = []; s.shopMissionTier = 1; s.usedMissionIds = { 1: [], 2: [], 3: [], 4: [] };
     if (s.shopEntranceEl) { s.shopEntranceEl.remove(); s.shopEntranceEl = null; }
     if (s.shopExitEl) { s.shopExitEl.remove(); s.shopExitEl = null; }
     if (s.shopArrowEl) { s.shopArrowEl.remove(); s.shopArrowEl = null; }
     if (s.shopArrowTextEl) { s.shopArrowTextEl.remove(); s.shopArrowTextEl = null; }
+    if (s.shopTitleEl) { s.shopTitleEl.remove(); s.shopTitleEl = null; }
     s.shopFade = 0; s.postShopSpawnDelay = false; s.shopOverlayVisible = false; s.enchantmentLevels = {};
     s.lastSpawnTime = 0; s.nextSpawnInterval = 2500;
     if (s.shopMusic) { s.shopMusic.pause(); s.shopMusic = null; }
@@ -1304,10 +1466,11 @@ export class GameEngine {
 
   public update() {
     const s = this.state; const currentInstant = Date.now(); const perfNow = performance.now(); const dt = perfNow - s.lastFrameTime; s.lastFrameTime = perfNow;
-    if (s.gameStarted && !s.isDead && !s.isPaused) { const delta = currentInstant - s.lastTimestamp; if (!s.inShop) s.activePlaytime += delta; if (s.fireshot > 0 && s.multishot === 0) { s.playerAnimTimer += dt; if (s.playerAnimTimer >= 250) { s.playerAnimTimer = 0; s.playerAnimFrame = (s.playerAnimFrame + 1) % PLAYER_ANIMS.length; this.updatePlayerSprite(); } } }
+    if (s.gameStarted && !s.isDead && !s.isPaused) { const delta = currentInstant - s.lastTimestamp; if (!s.inShop) s.activePlaytime += delta; if (s.fireshot > 0) { s.playerAnimTimer += dt; if (s.playerAnimTimer >= 250) { s.playerAnimTimer = 0; s.playerAnimFrame = (s.playerAnimFrame + 1) % 4; this.updatePlayerSprite(); } } }
     s.lastTimestamp = currentInstant;
     if (s.gameStarted) {
-      this.updateExplosions(dt);
+      this.updateExplosions();
+      this.updateParticles();
     }
     if (!s.gameStarted || s.isDead || s.isPaused || s.shopFade > 0) { this.animationId = requestAnimationFrame(this.update); return; }
     this.testBoxEl.style.left = (1200 - s.cameraX) + 'px'; this.testBoxEl.style.top = (400 - s.cameraY) + 'px';
@@ -1318,6 +1481,11 @@ export class GameEngine {
     if (s.keys['a'] || s.keys['ArrowLeft']) s.vx -= s.acceleration;
     if (s.keys['d'] || s.keys['ArrowRight']) s.vx += s.acceleration;
     s.vx *= s.friction; s.vy *= s.friction; s.x += s.vx; s.y += s.vy;
+    if (Math.hypot(s.vx, s.vy) > 0.3 && !s.inShop) {
+      if (Math.random() < 0.35) {
+        this.spawnPlayerParticle();
+      }
+    }
     const viewWidth = this.getSpawnScreenWidth(), viewHeight = this.getSpawnScreenHeight();
     s.cameraX += (s.x - s.cameraX - viewWidth / 2) * 0.1; s.cameraY += (s.y - s.cameraY - viewHeight / 2) * 0.1;
     this.playerEl.style.left = (s.x - s.cameraX) + 'px'; this.playerEl.style.top = (s.y - s.cameraY) + 'px';
@@ -1341,16 +1509,28 @@ export class GameEngine {
     }
     if (s.inShop && s.shopItemEls.length > 0) this.positionPhysicalShopItems();
     if (s.shopEntranceActive && !s.enteringShop && !s.inShop && s.shopArrowEl && s.shopArrowTextEl) {
-      const distToDoor = Math.hypot(px - s.shopEntranceX, py - s.shopEntranceY); const showArrow = distToDoor > 600;
-      s.shopArrowEl.style.opacity = showArrow ? '1' : '0'; s.shopArrowTextEl.style.opacity = showArrow ? '1' : '0';
+      const distToDoor = Math.hypot(px - s.shopEntranceX, py - s.shopEntranceY);
+      const showArrow = distToDoor > 600;
       if (showArrow) {
-        const ang = Math.atan2(s.shopEntranceY - s.y, s.shopEntranceX - s.x); const cx = viewWidth / 2, cy = viewHeight / 2; const arrowDist = 250;
+        s.shopArrowFade = Math.min(1.0, (s.shopArrowFade || 0) + dt / 300);
+      } else {
+        s.shopArrowFade = Math.max(0.0, (s.shopArrowFade || 0) - dt / 300);
+      }
+      if (s.shopArrowFade > 0) {
+        const pulseOpacity = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(Date.now() / 250));
+        const finalOpacity = s.shopArrowFade * pulseOpacity;
+        s.shopArrowEl.style.opacity = String(finalOpacity);
+        s.shopArrowTextEl.style.opacity = String(finalOpacity);
+        const ang = Math.atan2(s.shopEntranceY - s.y, s.shopEntranceX - s.x);
+        const cx = viewWidth / 2, cy = viewHeight / 2;
+        const arrowDist = 250;
         const ax = cx + Math.cos(ang) * arrowDist, ay = cy + Math.sin(ang) * arrowDist;
         s.shopArrowEl.style.left = (ax - 20) + 'px'; s.shopArrowEl.style.top = (ay - 20) + 'px'; s.shopArrowEl.style.transform = `rotate(${ang}rad)`;
         s.shopArrowTextEl.style.left = (ax - 80) + 'px'; s.shopArrowTextEl.style.top = (ay + 30) + 'px';
-        s.shopArrowAnimTimer += dt;
-        if (s.shopArrowAnimTimer >= 250) { s.shopArrowAnimTimer = 0; s.shopArrowAnimFrame = (s.shopArrowAnimFrame + 1) % ARROW_FRAMES.length; s.shopArrowEl.src = ARROW_FRAMES[s.shopArrowAnimFrame]; }
-        if (SHOP_SOUNDS.SHOP_ARROW_BEEP && Date.now() - s.lastShopArrowBeepTime >= SHOP_ARROW_BEEP_INTERVAL) { s.lastShopArrowBeepTime = Date.now(); this.playSound(SHOP_SOUNDS.SHOP_ARROW_BEEP); }
+        if (showArrow && SHOP_SOUNDS.SHOP_ARROW_BEEP && Date.now() - s.lastShopArrowBeepTime >= SHOP_ARROW_BEEP_INTERVAL) { s.lastShopArrowBeepTime = Date.now(); this.playSound(SHOP_SOUNDS.SHOP_ARROW_BEEP); }
+      } else {
+        s.shopArrowEl.style.opacity = '0';
+        s.shopArrowTextEl.style.opacity = '0';
       }
     }
     const currentActiveSize = (s.fireshot > 0) ? Math.max(s.bulletSize * 1.5, 32) : s.bulletSize;
@@ -1391,6 +1571,9 @@ export class GameEngine {
     for (const b of s.bullets) {
       b.x += b.vx;
       b.y += b.vy;
+      if (s.fireshot > 0 && Math.random() < 0.35) {
+        this.spawnBulletParticle(b.x, b.y);
+      }
     }
     for (const eb of s.enemyBullets) {
       eb.x += eb.vx;
@@ -1540,6 +1723,7 @@ export class GameEngine {
         if (e.isUnloaded) {
           e.el = this.createEnemyElement(e);
           e.isUnloaded = false;
+          this.syncEnemyShieldSystem(e);
         }
 
         if (e.isClone && e.cloneAnimating) {
@@ -1561,8 +1745,16 @@ export class GameEngine {
 
         const eSize = this.getEnemySize(e);
         if (e.type.isBomber) {
-          e.animTimer += dt;
-          if (e.animTimer >= 50) { e.animTimer -= 50; e.animFrame = (e.animFrame + 1) % BOMBER_SPRITES.length; if (e.el) e.el.src = BOMBER_SPRITES[e.animFrame]; }
+          let flashInterval = 150;
+          if (e.isPrimed) {
+            const progress = Math.min((e.primedTimer || 0) / 2000, 1);
+            flashInterval = 150 - progress * 110; // speeds up from 150ms down to 40ms!
+          }
+          const frame = Math.floor(Date.now() / flashInterval) % BOMBER_SPRITES.length;
+          if (e.animFrame !== frame) {
+            e.animFrame = frame;
+            if (e.el) e.el.src = BOMBER_SPRITES[frame];
+          }
           
           const cx = e.x + eSize / 2;
           const cy = e.y + eSize / 2;
@@ -1645,7 +1837,7 @@ export class GameEngine {
 
   public _killEnemy(e: Enemy, j: number, source: string, bullet?: Bullet) {
     const s = this.state;
-    const coinReward = Math.ceil(e.type.coins * 1.6);
+    const coinReward = e.type.coins;
     s.coins += coinReward;
     if (!s.mobKills) s.mobKills = {};
     s.mobKills[e.type.name] = (s.mobKills[e.type.name] || 0) + 1;
@@ -1712,6 +1904,7 @@ export class GameEngine {
     this.state.bullets.forEach(b => b.el.remove());
     this.state.enemyBullets.forEach(b => b.el.remove());
     this.state.explosions.forEach(ex => ex.el.remove());
+    this.state.particles.forEach(p => p.el.remove());
     if (this.state.shopEntranceEl) this.state.shopEntranceEl.remove();
     if (this.state.shopExitEl) this.state.shopExitEl.remove();
     if (this.state.shopArrowEl) this.state.shopArrowEl.remove();
