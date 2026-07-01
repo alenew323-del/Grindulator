@@ -593,12 +593,12 @@ export default function App() {
                     <div className="flex gap-2 mt-auto pt-1 w-full justify-center">
                       {isDiscovered && canShoot && (
                         <span className="px-1.5 py-0.5 bg-red-600/30 border border-red-500 text-red-500 text-[6px] font-bold tracking-wider flex items-center gap-1 rounded-none">
-                          🔫 SHOOTS
+                          SHOOTS
                         </span>
                       )}
                       {isDiscovered && canHaveShield && (
                         <span className="px-1.5 py-0.5 bg-blue-600/30 border border-blue-500 text-blue-500 text-[6px] font-bold tracking-wider flex items-center gap-1 rounded-none">
-                          🛡️ SHIELDS
+                          SHIELDS
                         </span>
                       )}
                       {!isDiscovered && (

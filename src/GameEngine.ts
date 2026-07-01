@@ -349,21 +349,36 @@ export class GameEngine {
   public setShopMusicVolume(v: number) { this.state.shopMusicVolume = v / 100; if (this.state.shopMusic) this.state.shopMusic.volume = this.state.shopMusicVolume; this.resumeMusic(); this.emitState(); }
   public setMusicVolume(v: number) { this.setWorldMusicVolume(v); }
   public setSfxVolume(v: number) { this.state.sfxVolume = v / 100; this.emitState(); }
-  public setMaxParticles(v: number) { this.state.maxParticles = v; this.emitState(); }
+  public setMaxParticles(v: number) {
+    this.state.maxParticles = v;
+    if (v === 0) {
+      this.state.particles.forEach(p => p.el.remove());
+      this.state.particles = [];
+    }
+    this.emitState();
+  }
 
   public updatePlayerSprite() {
     const s = this.state;
-    if (s.multishot > 0 && s.fireshot > 0) {
-      const level = Math.min(s.multishot, 3);
-      const frames = PLAYER_MULTISHOT_FIRE_ANIMS[level] || PLAYER_MULTISHOT_FIRE_ANIMS[1];
-      this.playerEl.src = frames[s.playerAnimFrame % frames.length];
-      this.playerEl.style.width = '72px';
+    if (s.multishot === 1) {
+      if (s.fireshot > 0) {
+        const frames = PLAYER_MULTISHOT_FIRE_ANIMS[1];
+        this.playerEl.src = frames[s.playerAnimFrame % frames.length];
+      } else {
+        this.playerEl.src = PLAYER_SPRITES[1];
+      }
+      this.playerEl.style.width = '69px';
       this.playerEl.style.height = '72px';
-      s.centerOffsetX = 36;
+      s.centerOffsetX = 34.5;
       s.centerOffsetY = 36;
-    } else if (s.multishot > 0) {
-      let idx = Math.min(s.multishot, 3);
-      this.playerEl.src = PLAYER_SPRITES[idx];
+    } else if (s.multishot > 1) {
+      const level = Math.min(s.multishot, 3);
+      if (s.fireshot > 0) {
+        const frames = PLAYER_MULTISHOT_FIRE_ANIMS[level] || PLAYER_MULTISHOT_FIRE_ANIMS[2];
+        this.playerEl.src = frames[s.playerAnimFrame % frames.length];
+      } else {
+        this.playerEl.src = PLAYER_SPRITES[level];
+      }
       this.playerEl.style.width = '72px';
       this.playerEl.style.height = '72px';
       s.centerOffsetX = 36;
@@ -372,9 +387,9 @@ export class GameEngine {
       if (s.fireshot > 0) {
         this.playerEl.src = PLAYER_ANIMS[s.playerAnimFrame % PLAYER_ANIMS.length];
         this.playerEl.style.width = '72px';
-        this.playerEl.style.height = '72px';
+        this.playerEl.style.height = '42px';
         s.centerOffsetX = 36;
-        s.centerOffsetY = 36;
+        s.centerOffsetY = 21;
       } else {
         this.playerEl.src = PLAYER_SPRITES[0];
         this.playerEl.style.width = '72px';
@@ -473,7 +488,7 @@ export class GameEngine {
       const muzzleDistance = Math.max(8, PLAYER_MUZZLE_DISTANCE - (dynamicSpawnSize * 0.15));
       const sx = px + Math.cos(currentAng) * muzzleDistance, sy = py + Math.sin(currentAng) * muzzleDistance;
       const el = document.createElement('img'); el.src = (s.fireshot > 0) ? BULLET_ANIMS[0] : DEFAULT_BULLET_SPRITE;
-      el.style.cssText = `width:${dynamicSpawnSize}px;position:absolute;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:9998;`;
+      el.style.cssText = `width:${dynamicSpawnSize}px;height:${dynamicSpawnSize}px;object-fit:contain;position:absolute;transform-origin:center;pointer-events:none;user-select:none;-webkit-user-drag:none;z-index:9998;`;
       el.style.left = (sx - (dynamicSpawnSize / 2) - s.cameraX) + 'px'; el.style.top = (sy - (dynamicSpawnSize / 2) - s.cameraY) + 'px'; el.style.transform = `rotate(${currentAng}rad)`;
       this.container.appendChild(el);
       s.bullets.push({ id: Math.random().toString(36).substr(2, 9), x: sx, y: sy, vx: Math.cos(currentAng) * s.bulletSpeed, vy: Math.sin(currentAng) * s.bulletSpeed, el, angle: currentAng, pierceLeft: s.bulletPierce, hitEnemies: [], animTimer: 0, animFrame: 0, isFireSplit: false, sessionKills: 0 });
@@ -508,11 +523,11 @@ export class GameEngine {
       if (e.name === 'Fast Mob' && elapsedSec > 40) growthFactor *= 2.5;
       if (e.name === 'Magic Mob' && elapsedSec > 40) growthFactor *= 3;
       if (e.name === 'Beefy Mob' && elapsedSec > 120) growthFactor *= 2;
-      if (e.name === 'Shooter Mob' && elapsedSec > 90) growthFactor *= 1.5;
+      if (e.name === 'Shooter Mob' && elapsedSec > 95) growthFactor *= 1.4;
       if (e.name === 'Armored Mob') {
         const timeSinceUnlock = (elapsedMs - e.unlock) / 1000;
-        const progress = Math.min(1, Math.max(0, timeSinceUnlock / 240)); // Gentler ramp over 4 mins
-        const rampScale = 0.05 + progress * 0.75; // Starts at 5%, ramps up to 80% maximum
+        const progress = Math.min(1, Math.max(0, timeSinceUnlock / 90)); // Ramps faster over 1.5 mins
+        const rampScale = 0.3 + progress * 0.7; // Starts at 30%, ramps up to 100%
         growthFactor *= rampScale;
       }
       if (e.name === 'Mimic Mob' && elapsedSec > 130) growthFactor *= 1.25;
@@ -738,8 +753,8 @@ export class GameEngine {
     const rowOffset = 10; 
     
     // Symmetrical shooting logic: Use the exact same base angle offset for both sides
-    const angleOffset = (Math.random() * 0.1 - 0.05);
-    const finalAngle = baseAng + angleOffset;
+    // Perfectly parallel: no random angle offset
+    const finalAngle = baseAng;
 
     for (const side of [-1, 1]) {
       const sx = cx + Math.cos(finalAngle) * muzzleDistance + Math.cos(perp) * rowOffset * side;
@@ -847,7 +862,6 @@ export class GameEngine {
 
   public spawnBulletParticle(bx: number, by: number) {
     const s = this.state;
-    if (s.shield > 0 && s.fireshot > 0) return;
     if (s.particles.length >= s.maxParticles) return;
     const size = 12 + Math.random() * 12;
     const el = document.createElement('img');
@@ -961,6 +975,16 @@ export class GameEngine {
         hasSplit: false,
         isClone: true, originalId: originalEnemy.el, cloneAngle: angle, cloneStartX: originalEnemy.x, cloneStartY: originalEnemy.y, cloneSpawnTime: spawnTime, cloneAnimating: true, id: Math.random().toString(36).substr(2, 9), isUnloaded: false, shieldBullets: [], activeShieldSignature: '', animTimer: 0, animFrame: 0
       });
+    });
+  }
+
+  public damageMagicClones(originalEnemy: Enemy) {
+    const s = this.state;
+    s.enemies.forEach(clone => {
+      if (clone.isClone && clone.originalId === originalEnemy.el) {
+        clone.health -= 1;
+        clone.lastDamageTime = Date.now();
+      }
     });
   }
 
@@ -1493,8 +1517,9 @@ export class GameEngine {
     if (s.keys['a'] || s.keys['ArrowLeft']) s.vx -= s.acceleration;
     if (s.keys['d'] || s.keys['ArrowRight']) s.vx += s.acceleration;
     s.vx *= s.friction; s.vy *= s.friction; s.x += s.vx; s.y += s.vy;
-    if (Math.hypot(s.vx, s.vy) > 0.3 && !s.inShop) {
-      if (Math.random() < 0.1) {
+    if (Math.hypot(s.vx, s.vy) > 0.3 && !s.inShop && s.maxParticles > 0) {
+      const pSpawnProb = (s.maxParticles / 80) * 0.45;
+      if (Math.random() < pSpawnProb) {
         this.spawnPlayerParticle();
       }
     }
@@ -1572,7 +1597,30 @@ export class GameEngine {
             e.lastHitTime = now;
           }
 
-          e.health -= 1; sb.hitEnemies.push(e.id); if (s.fireshot > 0) this.triggerFireshotSplit(e.x, e.y, eSize); if (e.type.name === 'Magic Mob' && !e.isClone && !e.hasSplit) { e.hasSplit = true; this.spawnMagicClones(e); } if (e.health <= 0) { this._killEnemy(e, j, 'shield'); } sb.pierceLeft--; this.triggerMissionEvent('shield_block', 1); sb.el.style.opacity = (sb.pierceLeft / sb.maxPierce).toString(); if (sb.pierceLeft <= 0) { sb.el.remove(); s.shieldBullets.splice(i, 1); isDestroyed = true; if (s.shieldBullets.length === 0) { s.shield = 0; this.emitState(); } break; }
+          e.health -= 1; e.lastDamageTime = Date.now(); sb.hitEnemies.push(e.id);
+          if (s.fireshot > 0) this.triggerFireshotSplit(e.x, e.y, eSize);
+          if (e.type.name === 'Magic Mob' && !e.isClone) {
+            if (!e.hasSplit) {
+              e.hasSplit = true;
+              this.spawnMagicClones(e);
+            } else {
+              this.damageMagicClones(e);
+            }
+          }
+          if (e.health <= 0) { this._killEnemy(e, j, 'shield'); }
+          sb.pierceLeft--;
+          this.triggerMissionEvent('shield_block', 1);
+          sb.el.style.opacity = (sb.pierceLeft / sb.maxPierce).toString();
+          if (sb.pierceLeft <= 0) {
+            sb.el.remove();
+            s.shieldBullets.splice(i, 1);
+            isDestroyed = true;
+            if (s.shieldBullets.length === 0) {
+              s.shield = 0;
+              this.emitState();
+            }
+            break;
+          }
         }
       }
       if (isDestroyed) continue;
@@ -1583,8 +1631,11 @@ export class GameEngine {
     for (const b of s.bullets) {
       b.x += b.vx;
       b.y += b.vy;
-      if (s.fireshot > 0 && Math.random() < 0.06) {
-        this.spawnBulletParticle(b.x, b.y);
+      if (s.fireshot > 0 && s.maxParticles > 0) {
+        const bSpawnChance = (s.maxParticles / 80) * 0.25;
+        if (Math.random() < bSpawnChance) {
+          this.spawnBulletParticle(b.x, b.y);
+        }
       }
     }
     for (const eb of s.enemyBullets) {
@@ -1708,9 +1759,16 @@ export class GameEngine {
             e.lastHitTime = now;
           }
 
-          e.health -= 1; b.hitEnemies.push(e.id);
+          e.health -= 1; e.lastDamageTime = Date.now(); b.hitEnemies.push(e.id);
           if (!b.isFireSplit) this.triggerFireshotSplit(e.x, e.y, eSize);
-          if (e.type.name === 'Magic Mob' && !e.isClone && !e.hasSplit) { e.hasSplit = true; this.spawnMagicClones(e); }
+          if (e.type.name === 'Magic Mob' && !e.isClone) {
+            if (!e.hasSplit) {
+              e.hasSplit = true;
+              this.spawnMagicClones(e);
+            } else {
+              this.damageMagicClones(e);
+            }
+          }
           if (e.health <= 0) { this._killEnemy(e, j, 'bullet', b); }
           if (b.pierceLeft > 0) { b.pierceLeft--; } else { b.el.remove(); s.bullets.splice(i, 1); continue bulletLoop; }
         }
@@ -1733,6 +1791,12 @@ export class GameEngine {
     for (let i = s.enemies.length - 1; i >= 0; i--) {
       const e = s.enemies[i];
       if (!e) continue;
+
+      if (e.health <= 0) {
+        this._killEnemy(e, i, 'bullet');
+        continue;
+      }
+
       const visible = this.isOnScreen(e.x, e.y, 200);
 
       if (visible) {
@@ -1817,6 +1881,13 @@ export class GameEngine {
           const ecy = e.y + eSize / 2;
           const dxTotal = px - ecx, dyTotal = py - ecy;
           e.el.style.transform = `rotate(${Math.atan2(dyTotal, dxTotal)}rad)`;
+
+          const isHitFlashing = Date.now() - (e.lastDamageTime || 0) < 150;
+          if (isHitFlashing) {
+            e.el.style.filter = 'brightness(0.5) sepia(1) hue-rotate(-50deg) saturate(15) brightness(1.8)';
+          } else {
+            e.el.style.filter = 'none';
+          }
         }
         if (e.type.name === 'Magic Mob') {
           // FIXED: Both original and clones use e.shootInterval to slow down and match perfectly!
